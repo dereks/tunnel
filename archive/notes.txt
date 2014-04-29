@@ -1,0 +1,197 @@
+
+Old design notes:
+
+accept() in the main thread, then hand off accept()ed socket  DONE
+    -- may be necessary for the main socket to become available again quickly
+
+what to do about logging?  DONE: syslog
+
+    #include <syslog.h>
+
+    setlogmask (LOG_UPTO (LOG_NOTICE));
+
+    openlog ("exampleprog", LOG_CONS | LOG_PID | LOG_NDELAY, LOG_LOCAL1);
+
+    syslog (LOG_NOTICE, "Program started by User %d", getuid ());
+    syslog (LOG_INFO, "A tree falls in a forest");
+
+    closelog ();
+
+
+Walk through tunnel_server.c again; fix all   DONE
+
+Fix list api  DONE
+    Add prepend  DONE
+
+Client close  DONE
+    1) Client->SSL gets broken
+    2) SSL->backend gets broken
+        -- I think these get read events; check for EOF on read in handlers.
+        -- Added client->link for fast deletes in this case.
+        
+    3) Server shutdown (break both)
+        - Does this require another list?  Yes
+            -- How to tell sockets to close? They are recorded in the client
+               struct.  Need a list.
+                -- OR: an event in the client which is a user-triggered. Like sockets.
+                    -- Triggers to the thread's event_base  All clients get it. No separate list required.
+
+    
+    close connections
+    free client instance
+    
+    tunnel_client_close_connections()?
+
+
+Client callbacks for copying data in/out of buffer   DONE
+    - Need a fifo to store bytes in.  Needs chunked buffer access for  
+      read().       DONE
+    - Write ready event: Only interested in this if there are bytes in the
+    fifo to write.  next
+    
+    Tasks:
+        Add a new fifo class  DONE
+        Put bytes in there
+        if fifo_bytes_used(> 0), set up alert for writes.
+
+        fifo_write(fifo, byte_count);
+        fifo_write_index(fifo);
+        fifo_write_count(fifo);
+
+        fifo_read(fifo, byte_count);
+        fifo_read_index(fifo);
+        fifo_read_count(fifo);
+
+
+list_delete() using client->link on close  DONE
+
+CyaSSL_set_using_nonblock(ssl, 1) on CYASSL*  DONE
+
+Check client_connect return code.  DONE
+
+Add all #includes  DONE
+
+All file header comments (copyright)  DONE
+
+Double-Check all uses of ref/unref  DONE
+
+tabs to spaces, whitespace  DONE
+
+main.c  DONE
+
+Makefile  DONE
+
+Write config file  DONE
+
+Compile  DONE
+
+run  DONE
+
+Add timeout event on write_result == 0, allow the other side to catch up  DONE
+
+
+--
+Design Notes
+--
+
+App structure:
+
+Threads:
+
+Listener thread
+
+WorkQueue?  How to hand off work?
+
+
+For SSL connections:
+	One thread handles many connections.
+	The ready events that come in async need to be processed
+	immediately; handed of to a job queue?
+		- No, job queue is an effect of using bufferedevents
+			- Need a "job" to process the buffer
+		
+		With sockets, can process immediately a newly-connected socket
+		gets handed (how? via queue?  As new client ptr?  Add to an FDSET?)
+	
+			.. In echoserver, handed off as a pthread job queue.
+		
+	Instead of one evbase per client, need one per worker thread
+		http://www.wangafu.net/~nickm/libevent-book/Ref2_eventbase.html
+		"If you want to have multiple threads polling for IO, you need to have an event_base for each thread."
+	
+	Each worker thread gets a:
+		First thread: listener and worker.
+		
+		Other threads? workers.
+		
+		Inputs? Accept on an fd.   
+			New SSL struction
+			Just the fd?
+		
+		evbase
+		
+		In the example, client is basically just an fd that has been accepted.
+			-- Maybe there is no client_t struct?  How to map an ssl connection?
+				-- The ssl connection replaces the fd in the ssl api
+			
+			CyaSSL_set_fd();
+				...can be retrieved for installation into the local evbase with
+				CyaSSL_get_fd()
+		
+		The CYASSL* ssl; is passed into the threadsafe queue.
+			-- The thread needs to be (a) listening for events and (b) 
+			listening for new jobs on the queue too?
+		
+			How to pass jobs; does the workqueue model work? Seems to block on
+			just one client...?
+			
+		Listener
+			Takes accept events, hands off the task to another thread
+				-- Don't want to compute handshakes in the listener
+		
+		Workers
+			-- So all worker threads must be able to handle an accept() call
+				-- Then malloc the CYASSL*, add to the sockfd
+				-- Add the sockfd to the thread-local evbase
+				-- Connect to the backend destination/port
+					Associate that backend connection socket with this socket/CYASSL*
+					Listen to events on the client
+						-- Both always in same thread, thus, event_base
+					
+					    Class name candidates:
+						    Endpoint
+						    Client
+						    Connection
+						    SSLTunnel
+						    
+						    Members like:
+							    socket_fd_ssl;   // Server socket (reads SSL)
+							    socket_fd_dest;  // Client socket to destination (gets plaintext)
+							    CYASSL *cyassl_session;  // SSL session info
+				- connects with SSL (Many threads handling connects, one per core)
+
+                API rough draft:
+
+                Tunnel *tunnel = tunnel_new();
+                tunnel_serve_forever(tunnel);
+
+                // Server was killed; clean up:
+                tunnel_free(&tunnel);
+
+                tunnel_on_accept_dispatcher();
+                tunnel_on_accept_thread();
+                tunnel_on_read
+                tunnel_on_write
+                tunnel_on_error
+			
+quick testing  DONE
+    -- needs more, sometimes unstable.  Could also be the Python server.  
+        Small buffer vs. large buffer?
+            Small buffer seems to get choked up.  Will the timeout fix flow ctrl?
+
+README.md  DONE
+
+get onto github  DONE
+
+
+
