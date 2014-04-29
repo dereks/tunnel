@@ -95,18 +95,29 @@ void tunnel_client_disconnect_ssl(TunnelClient *client)
 void tunnel_client_free(TunnelClient *client) 
 {    
     if (client == NULL) { return; }
+
+    if (client->read_ssl_timeout_event != NULL) {
+        event_free(client->read_ssl_timeout_event);
+    }
+    if (client->read_dest_timeout_event != NULL) {
+        event_free(client->read_dest_timeout_event);
+    }
+    if (client->write_ssl_timeout_event != NULL) {
+        event_free(client->write_ssl_timeout_event);
+    }
+    if (client->write_dest_timeout_event != NULL) {
+        event_free(client->write_dest_timeout_event);
+    }
     
-    // Free memory:
-    CyaSSL_free(client->cyassl);
+    if (client->cyassl != NULL) { CyaSSL_free(client->cyassl); }
+    if (client->from_ssl_buffer != NULL) { free(client->from_ssl_buffer); }
+    if (client->from_dest_buffer != NULL) { free(client->from_dest_buffer); }
 
     tunnel_thread_unref(client->thread);
     tunnel_server_unref(client->server);
     
     fifo_free(client->from_ssl_fifo);
     fifo_free(client->from_dest_fifo);
-    
-    free(client->from_ssl_buffer);
-    free(client->from_dest_buffer);
 
     free(client);
 }
@@ -124,42 +135,32 @@ TunnelClient *tunnel_client_new(TunnelThread *thread, TunnelServer *server)
     // New CYALSSL * for this connection:
     client->cyassl = CyaSSL_new(server->cyassl_ctx);
     if (client->cyassl == NULL) {
-        free(client);
+        tunnel_client_free(client);
         return NULL;
     }
     
     // Allocate the buffers and FIFO for read/writes:
     client->from_ssl_buffer = calloc(1, server->config->buffer_size);
     if (client->from_ssl_buffer == NULL) {
-        CyaSSL_free(client->cyassl);
-        free(client);
+        tunnel_client_free(client);
         return NULL;
     }
     
     client->from_dest_buffer = calloc(1, server->config->buffer_size);
     if (client->from_dest_buffer == NULL) {
-        CyaSSL_free(client->cyassl);
-        free(client->from_ssl_buffer);
-        free(client);
+        tunnel_client_free(client);
         return NULL;
     }
     
     client->from_ssl_fifo = fifo_new(server->config->buffer_size);
     if (client->from_ssl_fifo == NULL) {
-        CyaSSL_free(client->cyassl);
-        free(client->from_ssl_buffer);
-        free(client->from_dest_buffer);
-        free(client);
+        tunnel_client_free(client);
         return NULL;
     }
     
     client->from_dest_fifo = fifo_new(server->config->buffer_size);
     if (client->from_dest_fifo == NULL) {
-        fifo_free(client->from_ssl_fifo);
-        CyaSSL_free(client->cyassl);
-        free(client->from_ssl_buffer);
-        free(client->from_dest_buffer);
-        free(client);
+        tunnel_client_free(client);
         return NULL;
     }    
 
@@ -169,30 +170,46 @@ TunnelClient *tunnel_client_new(TunnelThread *thread, TunnelServer *server)
     
     client->server = server;    
     tunnel_server_ref(server);
+
+    // These software-only events are only event_add()'d if our buffers fill up:
+    client->read_ssl_timeout_event =
+     event_new(client->thread->libevent_base, -1, 0x0, on_read_ssl_timeout,
+               client);
+    if (client->read_ssl_timeout_event == NULL) {
+        tunnel_client_free(client);
+        return NULL;
+    }
+
+    client->read_dest_timeout_event = 
+     event_new(client->thread->libevent_base, -1, 0x0, on_read_dest_timeout,
+               client);
+    if (client->read_dest_timeout_event == NULL) {
+        tunnel_client_free(client);
+        return NULL;
+    }
+
+    client->write_ssl_timeout_event = 
+     event_new(client->thread->libevent_base, -1, 0x0, on_write_ssl_timeout,
+               client);
+    if (client->write_ssl_timeout_event == NULL) {
+        tunnel_client_free(client);
+        return NULL;
+    }
+
+    client->write_dest_timeout_event = 
+     event_new(client->thread->libevent_base, -1, 0x0, on_write_dest_timeout,
+               client);
+    if (client->write_dest_timeout_event == NULL) {
+        tunnel_client_free(client);
+        return NULL;
+    }
     
     // These get set on connect:
     client->ssl_socket_fd = -1;
     client->dest_socket_fd = -1;
 
     // This flag lets us know when the handshake has completed:
-    client->ssl_accept_state = SSL_ERROR_WANT_READ;
-    
-    // These software-only events are only event_add()'d if our buffers fill up:
-    client->read_ssl_timeout_event =
-     event_new(client->thread->libevent_base, -1, 0x0, on_read_ssl_timeout,
-               client);
-
-    client->read_dest_timeout_event = 
-     event_new(client->thread->libevent_base, -1, 0x0, on_read_dest_timeout,
-               client);
-
-    client->write_ssl_timeout_event = 
-     event_new(client->thread->libevent_base, -1, 0x0, on_write_ssl_timeout,
-               client);
-
-    client->write_dest_timeout_event = 
-     event_new(client->thread->libevent_base, -1, 0x0, on_write_dest_timeout,
-               client);
+    client->ssl_accept_state = SSL_ERROR_WANT_READ;    
 
     // These get set on connect.  (We need the accept()ed socket_fd first.)
     client->on_read_ssl_event = NULL;
