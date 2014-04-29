@@ -1,6 +1,4 @@
-Tunnel
-======
-# A lightweight SSL terminator.
+# Tunnel: A lightweight SSL terminator.
 
 Tunnel is a small SSL server (35K stripped) which decrypts and sends 
 all plaintext bytes to the configured destination. 
