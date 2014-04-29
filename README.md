@@ -96,6 +96,19 @@ cd ./tools/
 ./simple_http_server.sh
 ```
 
+# Manifest
+
+Entry         | Description
+------------- | -------------
+archive       | Old files to delete soon. Currently has the original design notes.
+src           | Tunnel source code. (The meat. Or tofu, if that's how you roll.)
+third-party   | Library source from other distributors.
+tools         | Tools and utilities for development and testing
+*.pem         | SSL certs.  (These are the demo files from WolfSSL.)
+tunnel.ini    | The configuration file. Edit this before running ./tunnel.
+tunnel        | ELF 64-bit LSB executable, x86-64. (For your convenience.)
+
+
 # Current Status
 
 Tunnel is not ready for prime time. It's only had a few hours of
