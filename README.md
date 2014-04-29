@@ -23,7 +23,7 @@ cross-platform manner using libevent.
 
 In contrast with Tunnel, most classic server architectures use the fork() or 
 worker-thread-per-client model. Every new socket connection is handed off to 
-a thread that isdedicated to that particular client for the life of 
+a thread that is dedicated to that particular client for the life of 
 the connection.
 
 This classic design is common because it allows for the use of blocking I/O, 
@@ -47,8 +47,9 @@ times faster socket I/O, and several thousand times faster on busy servers.
 
 The library libevent abstracts the underlying OS-specific kernel feature into a 
 cross-platform API, so Tunnel should run on any platform supported by
-CyaSSL, pthreads, and libevent (including a fall-back to select() under 
-Windows).
+CyaSSL, pthreads, libevent, and syslog. (Note, Windows will need to use a 
+wrapper library for pthreads and syslog, and libevent will fall back to 
+select().)
 
 The one drawback of most event pump servers (like thttpd, lighttpd, 
 snap-server, etc.) is that there is only a single event pump loop, meaning, 
@@ -60,7 +61,7 @@ of the connection.
 
 # Compiling and Running
 
-'''bash
+```bash
 # Install build-essential, pthreads, and libevent:
 sudo apt-get install build-essential checkinstall \
  libpthread-stubs0 libpthread-stubs0-dev libevent-dev
@@ -82,7 +83,7 @@ gedit ./tunnel.ini  # Yeah, that's right. Gedit. Punk.
 
 # Finally, run it:
 ./tunnel
-'''
+```
 
 Daemonization is not done yet (it's on the task list). For now it can be
 run using your favorite daemonizer, such as 'screen'.
@@ -90,10 +91,10 @@ run using your favorite daemonizer, such as 'screen'.
 If you need a plaintext server to test against there is a trivial HTTP server
 (in Python) in ./tools/. 
 
-'''bash
+```bash
 cd ./tools/
 ./simple_http_server.sh
-'''
+```
 
 # Current Status
 
